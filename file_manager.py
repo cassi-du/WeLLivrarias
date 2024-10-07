@@ -1,9 +1,10 @@
-import csv
 import sqlite3
+import os
 import shutil
-import datetime
+import pandas as pd
 from pathlib import Path
 from utils import limpar_backups
+from datetime import datetime
 
 #Diretorios
 base_dir = Path("meu_sistema_livraria")
@@ -16,48 +17,55 @@ db_path = data_dir / "livraria.db"
 export_dir.mkdir(parents=True, exist_ok=True)
 
 #Exportar dados para CSV
+import pandas as pd
+import sqlite3
+
 def exportar_para_csv(caminho_csv):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
+
     cursor.execute("SELECT titulo, autor, ano_publicacao, preco FROM livros")
     livros = cursor.fetchall()
-    
-    with open(caminho_csv, 'w', newline='', encoding='utf-8') as csvfile:
-        colunas = ['Título', 'Autor', 'Ano', 'Preço']
-        writer = csv.writer(csvfile)
-        writer.writerow(colunas)
 
-        for livro in livros:
-            writer.writerow(livro)
+    df = pd.DataFrame(livros, columns=['Título', 'Autor', 'Ano', 'Preço'])
+
+    df.to_csv(caminho_csv, index=False, encoding='utf-8', sep=',')
     
     conn.close()
     print(f"Dados exportados com sucesso para {caminho_csv}")
 
-#Importar dados de CSV
 def importar_de_csv(caminho_csv):
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    with open(caminho_csv, 'r', encoding='utf-8') as csvfile:
-        reader = csv.reader(csvfile)
-        next(reader)
-        for linha in reader:
-            try:
-                titulo = linha[0]
-                autor = linha[1]
-                ano_publicacao = int(linha[2])
-                preco = float(linha[3])
-                cursor.execute("INSERT INTO livros (titulo, autor, ano_publicacao, preco) VALUES (?, ?, ?, ?)", 
-                               (titulo, autor, ano_publicacao, preco))
-            except ValueError as e:
-                print(f"Erro ao processar linha: {linha}. Motivo: {e}")
-                continue
+    
+    try:
+        df = pd.read_csv(caminho_csv, encoding='utf-8').dropna(how='all')
+        for index, row in df.iterrows():
+            cursor.execute("""
+                INSERT INTO livros (titulo, autor, ano_publicacao, preco)
+                VALUES (?, ?, ?, ?)
+            """, (row['Título'], row['Autor'], int(row['Ano']), float(row['Preço'])))
+        
+    except ValueError as e:
+        print(f"Erro ao processar o CSV. Motivo: {e}")
+    
     conn.commit()
     conn.close()
     print("Dados importados com sucesso.")
 
-# Função backup
 def fazer_backup():
-    hoje = datetime.date.today().strftime('%Y-%m-%d')
-    backup_file = backup_dir / f"backup_livraria_{hoje}.db"
-    shutil.copy(db_path, backup_file)
-    limpar_backups(backup_dir)
+    backups_dir = 'meu_sistema_livraria/backups'
+    
+    #mkdir
+    if not os.path.exists(backups_dir):
+        os.makedirs(backups_dir)
+        print(f"Diretório de backups criado: {backups_dir}")
+
+    db_path = 'meu_sistema_livraria/data/livraria.db'
+    backup_filename = f"backup_livraria_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.db"
+    backup_path = os.path.join(backups_dir, backup_filename)
+
+    shutil.copy(db_path, backup_path)
+    print(f"Backup do banco de dados realizado com sucesso: {backup_path}")
+
+    limpar_backups(backups_dir)
